@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://random.dev/spec/tool-manifest/v0.1",
+  "title": "rdv Tool Manifest",
+  "description": "Self-description for an rdv tool container",
+  "type": "object",
+  "required": [
+    "name",
+    "version",
+    "description",
+    "spec_version",
+    "inputs",
+    "outputs",
+    "trust_requirements",
+    "supported_platforms",
+    "parallel_safe"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Tool identifier",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "examples": ["rdv-build", "rdv-sbom"]
+    },
+    "version": {
+      "type": "string",
+      "description": "SemVer version string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of what this tool does"
+    },
+    "spec_version": {
+      "type": "string",
+      "description": "rdv Tool Container Spec version this tool targets",
+      "enum": ["0.1"]
+    },
+    "inputs": {
+      "type": "object",
+      "description": "What this tool expects as input",
+      "required": ["workspace"],
+      "additionalProperties": false,
+      "properties": {
+        "workspace": {
+          "type": "boolean",
+          "description": "Whether this tool reads from the workspace mount"
+        },
+        "config": {
+          "type": "boolean",
+          "description": "Whether this tool reads from the config mount",
+          "default": false
+        },
+        "artifacts": {
+          "type": "array",
+          "description": "Named artifact inputs expected from prior pipeline steps",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "description": "What this tool produces",
+      "required": ["attestation"],
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "type": "array",
+          "description": "Named artifact outputs available to subsequent pipeline steps",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "reports": {
+          "type": "array",
+          "description": "Named report files produced in /output",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "attestation": {
+          "type": "boolean",
+          "description": "Whether this tool produces an attestation (should always be true for rdv-base images)",
+          "default": true
+        }
+      }
+    },
+    "config_schema": {
+      "type": "object",
+      "description": "JSON Schema for tool-specific configuration (mounted at /config/tool.json)"
+    },
+    "trust_requirements": {
+      "type": "string",
+      "description": "Minimum trust level required to run this tool",
+      "enum": ["local", "attested", "hardened"]
+    },
+    "supported_platforms": {
+      "type": "array",
+      "description": "Platforms this tool supports",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["os", "arch"],
+        "additionalProperties": false,
+        "properties": {
+          "os": {
+            "type": "string",
+            "enum": ["linux", "darwin", "windows"]
+          },
+          "arch": {
+            "type": "string",
+            "enum": ["amd64", "arm64", "arm/v7"]
+          }
+        }
+      }
+    },
+    "parallel_safe": {
+      "type": "boolean",
+      "description": "Whether multiple instances of this tool can run concurrently against the same workspace"
+    },
+    "implementation_variant": {
+      "type": "string",
+      "description": "Variant identifier for A/B routing (e.g., go-v1, rust-v1)",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    }
+  }
+}

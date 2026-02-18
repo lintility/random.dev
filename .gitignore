@@ -1,0 +1,27 @@
+# rdv cache
+.rdv/
+/tmp/rdv-*
+
+# Build outputs
+dist/
+*.o
+*.a
+
+# Go
+*.test
+*.out
+vendor/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Node
+node_modules/
+*.lock
+
+# OS
+.DS_Store
+Thumbs.db

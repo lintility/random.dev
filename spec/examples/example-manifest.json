@@ -1,0 +1,44 @@
+{
+  "name": "rdv-build",
+  "version": "0.1.0",
+  "description": "Multi-language build tool. Auto-detects language and produces compiled artifacts.",
+  "spec_version": "0.1",
+  "inputs": {
+    "workspace": true,
+    "config": true,
+    "artifacts": []
+  },
+  "outputs": {
+    "artifacts": ["binary", "workspace"],
+    "reports": [],
+    "attestation": true
+  },
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "language": {
+        "type": "string",
+        "enum": ["auto", "go", "rust", "python", "node"],
+        "default": "auto"
+      },
+      "target": {
+        "type": "string",
+        "enum": ["debug", "release"],
+        "default": "release"
+      },
+      "output_binary": {
+        "type": "string",
+        "description": "Name of output binary (auto-detected if not set)"
+      }
+    }
+  },
+  "trust_requirements": "local",
+  "supported_platforms": [
+    {"os": "linux", "arch": "amd64"},
+    {"os": "linux", "arch": "arm64"},
+    {"os": "darwin", "arch": "arm64"},
+    {"os": "darwin", "arch": "amd64"}
+  ],
+  "parallel_safe": false,
+  "implementation_variant": "go-v1"
+}

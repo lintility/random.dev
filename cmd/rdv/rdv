@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+# rdv - bootstrap CLI shim (phase 0)
+# Universal contract runner for rdv tool containers.
+# Intentionally simple. Replaced by the real Go CLI in phase 2.
+# Usage: rdv <command> [args]
+set -euo pipefail
+
+# ── Constants ──────────────────────────────────────────────────────────────────
+RDV_VERSION="0.1.0-bootstrap"
+RDV_CACHE_DIR="${RDV_CACHE_DIR:-$HOME/.rdv/cache}"
+RDV_CONFIG_FILE="${RDV_CONFIG_FILE:-./rdv.yaml}"
+RDV_DEFAULT_TRUST_LEVEL="local"
+MANIFEST_PATH="/tool-manifest.json"
+
+# ── Colors ─────────────────────────────────────────────────────────────────────
+if [[ -t 1 ]]; then
+  RED='\033[0;31m'; YELLOW='\033[0;33m'; GREEN='\033[0;32m'
+  CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
+else
+  RED=''; YELLOW=''; GREEN=''; CYAN=''; BOLD=''; RESET=''
+fi
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+log()  { echo -e "${CYAN}rdv${RESET} $*" >&2; }
+warn() { echo -e "${YELLOW}warn${RESET} $*" >&2; }
+err()  { echo -e "${RED}error${RESET} $*" >&2; }
+die()  { err "$*"; exit 1; }
+
+require_cmd() {
+  command -v "$1" &>/dev/null || die "Required command not found: $1"
+}
+
+# Generate a UUIDv4 without relying on uuidgen (not always available)
+gen_uuid() {
+  if command -v uuidgen &>/dev/null; then
+    uuidgen | tr '[:upper:]' '[:lower:]'
+  elif [[ -f /proc/sys/kernel/random/uuid ]]; then
+    cat /proc/sys/kernel/random/uuid
+  else
+    local b; b=$(od -x /dev/urandom | head -1 | awk '{print $2$3"-"$4"-4"substr($5,2)"-"substr($6,1,1)"8"substr($6,2)"-"$7$8$9}')
+    echo "${b:0:36}"
+  fi
+}
+
+# ── Docker check ───────────────────────────────────────────────────────────────
+check_docker() {
+  require_cmd docker
+  docker info &>/dev/null || die "Docker is not running or not accessible."
+}
+
+# ── Cache ──────────────────────────────────────────────────────────────────────
+ensure_cache() {
+  mkdir -p "$RDV_CACHE_DIR"
+}
+
+# ── Manifest validation ────────────────────────────────────────────────────────
+validate_manifest() {
+  local image="$1"
+  local manifest
+
+  log "Validating manifest for ${BOLD}${image}${RESET}..."
+
+  manifest=$(docker run --rm --entrypoint /bin/sh "$image" \
+    -c "cat $MANIFEST_PATH 2>/dev/null" 2>/dev/null) || {
+    manifest=$(docker create "$image" 2>/dev/null | xargs -I{} sh -c \
+      "docker cp {}:$MANIFEST_PATH /tmp/rdv-manifest-$$.json 2>/dev/null && \
+       docker rm {} >/dev/null 2>&1 && \
+       cat /tmp/rdv-manifest-$$.json && \
+       rm -f /tmp/rdv-manifest-$$.json") 2>/dev/null || true
+  }
+
+  if [[ -z "$manifest" ]]; then
+    warn "No $MANIFEST_PATH found in image. Proceeding without manifest validation."
+    return 0
+  fi
+
+  local required_fields=("name" "version" "spec_version" "trust_requirements" "parallel_safe")
+  for field in "${required_fields[@]}"; do
+    if ! echo "$manifest" | grep -q "\"$field\""; then
+      err "Manifest missing required field: $field"
+      return 2
+    fi
+  done
+
+  local name version description
+  name=$(echo "$manifest" | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"//; s/"//')
+  version=$(echo "$manifest" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"//; s/"//')
+  description=$(echo "$manifest" | grep -o '"description"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"//; s/"//')
+
+  log "  ${GREEN}✓${RESET} ${BOLD}${name}${RESET} v${version} — ${description}"
+  return 0
+}
+
+# ── run command ────────────────────────────────────────────────────────────────
+cmd_run() {
+  local image=""
+  local workspace="$(pwd)"
+  local config_file=""
+  local trust_level="$RDV_DEFAULT_TRUST_LEVEL"
+  local output_dir=""
+  local extra_args=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --workspace|-w)   workspace="$2"; shift 2 ;;
+      --config|-c)      config_file="$2"; shift 2 ;;
+      --output|-o)      output_dir="$2"; shift 2 ;;
+      --trust)          trust_level="$2"; shift 2 ;;
+      --help|-h)        usage_run; return 0 ;;
+      -*)               extra_args+=("$1"); shift ;;
+      *)
+        if [[ -z "$image" ]]; then image="$1"; shift
+        else extra_args+=("$1"); shift; fi
+        ;;
+    esac
+  done
+
+  [[ -z "$image" ]] && { usage_run; die "Image is required."; }
+
+  workspace="$(cd "$workspace" && pwd)"
+  output_dir="${output_dir:-$(mktemp -d /tmp/rdv-output-XXXXXX)}"
+  mkdir -p "$output_dir"
+
+  local config_mount_args=()
+  if [[ -n "$config_file" && -f "$config_file" ]]; then
+    local config_dir; config_dir="$(cd "$(dirname "$config_file")" && pwd)"
+    config_mount_args=(-v "${config_dir}:/config:ro")
+    log "Config: ${config_dir}"
+  elif [[ -f "$RDV_CONFIG_FILE" ]]; then
+    local config_dir; config_dir="$(cd "$(dirname "$RDV_CONFIG_FILE")" && pwd)"
+    config_mount_args=(-v "${config_dir}:/config:ro")
+    log "Config (default): ${config_dir}"
+  fi
+
+  ensure_cache
+  local invocation_id; invocation_id="$(gen_uuid)"
+
+  log "Image:       ${BOLD}${image}${RESET}"
+  log "Workspace:   ${workspace}"
+  log "Output:      ${output_dir}"
+  log "Cache:       ${RDV_CACHE_DIR}"
+  log "Trust:       ${trust_level}"
+  log "Invocation:  ${invocation_id}"
+
+  check_docker
+  validate_manifest "$image" || exit 2
+
+  log "Running..."
+
+  docker run \
+    --rm \
+    -v "${workspace}:/workspace:ro" \
+    -v "${output_dir}:/output:rw" \
+    -v "${RDV_CACHE_DIR}:/cache:rw" \
+    "${config_mount_args[@]}" \
+    -e "TOOL_WORKSPACE=/workspace" \
+    -e "TOOL_OUTPUT=/output" \
+    -e "TOOL_CACHE=/cache" \
+    -e "TOOL_CONFIG=/config" \
+    -e "TOOL_TRUST_LEVEL=${trust_level}" \
+    -e "TOOL_LOG_SINK=stderr" \
+    -e "TOOL_INVOCATION_ID=${invocation_id}" \
+    "${extra_args[@]}" \
+    "$image"
+
+  local exit_code=$?
+
+  if [[ $exit_code -eq 0 ]]; then
+    log "${GREEN}✓ Success${RESET} (invocation: ${invocation_id})"
+    log "Output at: ${output_dir}"
+  elif [[ $exit_code -eq 1 ]]; then
+    err "Tool error (exit 1). Check output and logs."
+  elif [[ $exit_code -eq 2 ]]; then
+    err "Contract violation (exit 2). Tool did not meet rdv spec requirements."
+  elif [[ $exit_code -eq 3 ]]; then
+    err "Config error (exit 3). Check your rdv.yaml or tool config."
+  else
+    err "Unknown exit code: ${exit_code}"
+  fi
+
+  return $exit_code
+}
+
+# ── clean command ──────────────────────────────────────────────────────────────
+cmd_clean() {
+  if [[ ! -d "$RDV_CACHE_DIR" ]]; then
+    log "Cache directory does not exist: ${RDV_CACHE_DIR}"
+    return 0
+  fi
+
+  local size; size=$(du -sh "$RDV_CACHE_DIR" 2>/dev/null | cut -f1)
+  log "Cleaning cache: ${RDV_CACHE_DIR} (${size})"
+  rm -rf "${RDV_CACHE_DIR:?}"
+  log "${GREEN}✓ Cache cleared${RESET}"
+}
+
+# ── version command ────────────────────────────────────────────────────────────
+cmd_version() {
+  echo "rdv ${RDV_VERSION}"
+}
+
+# ── Usage ──────────────────────────────────────────────────────────────────────
+usage() {
+  cat >&2 <<EOF
+${BOLD}rdv${RESET} ${RDV_VERSION} — bootstrap CLI shim for rdv tool containers
+
+${BOLD}USAGE${RESET}
+  rdv <command> [options]
+
+${BOLD}COMMANDS${RESET}
+  run <image>     Run a tool container with the rdv contract
+  clean           Remove the local cache (~/.rdv/cache)
+  version         Print version and exit
+
+${BOLD}ENVIRONMENT${RESET}
+  RDV_CACHE_DIR   Override cache directory (default: ~/.rdv/cache)
+  RDV_CONFIG_FILE Override default config file (default: ./rdv.yaml)
+
+Run ${BOLD}rdv <command> --help${RESET} for command-specific options.
+EOF
+}
+
+usage_run() {
+  cat >&2 <<EOF
+${BOLD}rdv run${RESET} — Run an rdv tool container
+
+${BOLD}USAGE${RESET}
+  rdv run <image> [options]
+
+${BOLD}OPTIONS${RESET}
+  --workspace, -w <path>   Source workspace directory (default: current dir)
+  --config, -c <file>      Config file to mount (default: ./rdv.yaml if present)
+  --output, -o <path>      Output directory (default: temp dir in /tmp)
+  --trust <level>          Trust level: local, attested, hardened (default: local)
+
+${BOLD}EXAMPLES${RESET}
+  rdv run rdv-build:latest
+  rdv run rdv-build:latest --workspace ./src --output ./dist
+  rdv run rdv-scan:latest --workspace . --config ./rdv.yaml
+EOF
+}
+
+# ── Entrypoint ─────────────────────────────────────────────────────────────────
+main() {
+  local cmd="${1:-}"
+  [[ $# -gt 0 ]] && shift
+
+  case "$cmd" in
+    run)      cmd_run "$@" ;;
+    clean)    cmd_clean "$@" ;;
+    version)  cmd_version ;;
+    help|--help|-h|"") usage; [[ -z "$cmd" ]] && exit 1 || exit 0 ;;
+    *) err "Unknown command: $cmd"; usage; exit 1 ;;
+  esac
+}
+
+main "$@"
