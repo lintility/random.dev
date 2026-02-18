@@ -19,7 +19,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 LABEL org.opencontainers.image.title="rdv-base:minimal"
 LABEL org.opencontainers.image.description="rdv base image for compiled binaries"
 LABEL org.opencontainers.image.source="https://github.com/lintility/random.dev"
-LABEL rdv.spec_version="0.1"
+LABEL rdv.spec-version="0.1"
 
 # Copy the entrypoint wrapper
 COPY --from=builder /entrypoint /rdv-entrypoint
