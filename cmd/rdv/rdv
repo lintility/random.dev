@@ -37,8 +37,17 @@ gen_uuid() {
   elif [[ -f /proc/sys/kernel/random/uuid ]]; then
     cat /proc/sys/kernel/random/uuid
   else
-    local b; b=$(od -x /dev/urandom | head -1 | awk '{print $2$3"-"$4"-4"substr($5,2)"-"substr($6,1,1)"8"substr($6,2)"-"$7$8$9}')
-    echo "${b:0:36}"
+    # Read 16 random bytes, then set version (0x40) and variant (0x80) bits
+    # per RFC 4122 §4.4: version nibble = 0x4, variant bits = 10xx (0x8–0xb)
+    local hex
+    hex=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+    local b6; b6=$(printf '%02x' $(( (16#${hex:12:2} & 0x0f) | 0x40 )))
+    local b8; b8=$(printf '%02x' $(( (16#${hex:16:2} & 0x3f) | 0x80 )))
+    printf '%s-%s-%s%s-%s%s-%s\n' \
+      "${hex:0:8}" "${hex:8:4}" \
+      "${b6}" "${hex:14:2}" \
+      "${b8}" "${hex:18:2}" \
+      "${hex:20:12}"
   fi
 }
 
@@ -152,7 +161,7 @@ cmd_run() {
     -v "${workspace}:/workspace:ro" \
     -v "${output_dir}:/output:rw" \
     -v "${RDV_CACHE_DIR}:/cache:rw" \
-    "${config_mount_args[@]}" \
+    ${config_mount_args[@]+"${config_mount_args[@]}"} \
     -e "TOOL_WORKSPACE=/workspace" \
     -e "TOOL_OUTPUT=/output" \
     -e "TOOL_CACHE=/cache" \
@@ -160,7 +169,7 @@ cmd_run() {
     -e "TOOL_TRUST_LEVEL=${trust_level}" \
     -e "TOOL_LOG_SINK=stderr" \
     -e "TOOL_INVOCATION_ID=${invocation_id}" \
-    "${extra_args[@]}" \
+    ${extra_args[@]+"${extra_args[@]}"} \
     "$image"
 
   local exit_code=$?

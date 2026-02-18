@@ -12,7 +12,7 @@ INVOCATION_ID="${TOOL_INVOCATION_ID:-unknown}"
 log_json() {
   local level="$1" msg="$2"
   printf '{"timestamp":"%s","level":"%s","tool":"%s","invocation_id":"%s","message":"%s"}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" "$level" "$TOOL_NAME" "$INVOCATION_ID" "$msg" >&2
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$level" "$TOOL_NAME" "$INVOCATION_ID" "$msg" >&2
 }
 
 # ── Read manifest ─────────────────────────────────────────────────────────────
@@ -60,11 +60,13 @@ log_json "info" "Contract validated"
 
 # ── Hash workspace (materials) ────────────────────────────────────────────────
 workspace_hash() {
-  find "${TOOL_WORKSPACE}" -type f -exec sha256sum {} \; 2>/dev/null \
-    | sort | sha256sum | awk '{print $1}'
+  # Sort by path first to ensure a deterministic hash regardless of filesystem order.
+  find "${TOOL_WORKSPACE}" -type f -print0 2>/dev/null \
+    | sort -z | xargs -0 sha256sum 2>/dev/null \
+    | sha256sum | awk '{print $1}'
 }
 WORKSPACE_HASH=$(workspace_hash)
-STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)
+STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # ── Run the tool ──────────────────────────────────────────────────────────────
 TOOL_BIN=""
@@ -85,7 +87,7 @@ fi
 EXIT_CODE=0
 "$TOOL_BIN" "$@" || EXIT_CODE=$?
 
-FINISHED_AT=$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)
+FINISHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # ── Collect output products ───────────────────────────────────────────────────
 products_json() {
