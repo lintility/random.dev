@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"syscall"
 	"time"
 )
@@ -44,16 +45,16 @@ func logJSON(level, tool, invocationID, msg string) {
 // ── Attestation ───────────────────────────────────────────────────────────────
 
 type attestation struct {
-	SpecVersion  string                       `json:"spec_version"`
-	InvocationID string                       `json:"invocation_id"`
-	Tool         attestationTool              `json:"tool"`
-	Builder      attestationBuilder           `json:"builder"`
-	Materials    map[string]string            `json:"materials"`
+	SpecVersion  string                        `json:"spec_version"`
+	InvocationID string                        `json:"invocation_id"`
+	Tool         attestationTool               `json:"tool"`
+	Builder      attestationBuilder            `json:"builder"`
+	Materials    map[string]string             `json:"materials"`
 	Products     map[string]attestationProduct `json:"products"`
-	ExitCode     int                          `json:"exit_code"`
-	StartedAt    string                       `json:"started_at"`
-	FinishedAt   string                       `json:"finished_at"`
-	Signature    interface{}                  `json:"signature"`
+	ExitCode     int                           `json:"exit_code"`
+	StartedAt    string                        `json:"started_at"`
+	FinishedAt   string                        `json:"finished_at"`
+	Signature    interface{}                   `json:"signature"`
 }
 
 type attestationTool struct {
@@ -85,7 +86,12 @@ func hashFile(path string) (string, error) {
 }
 
 func hashDir(root string) (string, error) {
-	h := sha256.New()
+	type entry struct {
+		rel  string
+		hash string
+	}
+	var entries []entry
+
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
@@ -95,13 +101,25 @@ func hashDir(root string) (string, error) {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(h, "%s:%s\n", rel, fh)
+		entries = append(entries, entry{rel: rel, hash: fh})
 		return nil
 	})
-	return hex.EncodeToString(h.Sum(nil)), err
+	if err != nil {
+		return "", err
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].rel < entries[j].rel
+	})
+
+	h := sha256.New()
+	for _, e := range entries {
+		fmt.Fprintf(h, "%s:%s\n", e.rel, e.hash)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func collectProducts(outputDir string) map[string]attestationProduct {
+func collectProducts(outputDir, toolName, invocationID string) map[string]attestationProduct {
 	products := make(map[string]attestationProduct)
 	_ = filepath.WalkDir(outputDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -113,6 +131,7 @@ func collectProducts(outputDir string) map[string]attestationProduct {
 		rel, _ := filepath.Rel(outputDir, path)
 		h, err := hashFile(path)
 		if err != nil {
+			logJSON("warn", toolName, invocationID, fmt.Sprintf("Could not hash product %s: %v", rel, err))
 			return nil
 		}
 		products[rel] = attestationProduct{SHA256: h, Path: path}
@@ -199,9 +218,16 @@ func main() {
 	startedAt := time.Now().UTC()
 	workspaceHash, _ := hashDir(os.Getenv("TOOL_WORKSPACE"))
 
-	toolBin := "/tool"
-	if _, err := os.Stat(toolBin); os.IsNotExist(err) {
-		logJSON("error", toolName, invocationID, "Tool binary not found at /tool")
+	candidates := []string{"/tool", "/tool.bin"}
+	toolBin := ""
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			toolBin = c
+			break
+		}
+	}
+	if toolBin == "" {
+		logJSON("error", toolName, invocationID, "Tool binary not found. Expected /tool or /tool.bin")
 		os.Exit(2)
 	}
 
@@ -226,7 +252,7 @@ func main() {
 
 	finishedAt := time.Now().UTC()
 	outputDir := os.Getenv("TOOL_OUTPUT")
-	products := collectProducts(outputDir)
+	products := collectProducts(outputDir, toolName, invocationID)
 
 	att := attestation{
 		SpecVersion:  specVersion,
@@ -250,10 +276,16 @@ func main() {
 	}
 
 	attPath := filepath.Join(outputDir, ".attestation.json")
-	if b, err := json.MarshalIndent(att, "", "  "); err == nil {
-		_ = os.WriteFile(attPath, b, 0644)
-		logJSON("info", toolName, invocationID, fmt.Sprintf("Attestation written to %s", attPath))
+	b, err := json.MarshalIndent(att, "", "  ")
+	if err != nil {
+		logJSON("error", toolName, invocationID, "Failed to marshal attestation: "+err.Error())
+		os.Exit(2)
 	}
+	if err := os.WriteFile(attPath, b, 0644); err != nil {
+		logJSON("error", toolName, invocationID, "Contract violation: failed to write attestation to "+attPath+": "+err.Error())
+		os.Exit(2)
+	}
+	logJSON("info", toolName, invocationID, fmt.Sprintf("Attestation written to %s", attPath))
 
 	logJSON("info", toolName, invocationID, fmt.Sprintf("Finished with exit code %d (duration: %s)",
 		exitCode, finishedAt.Sub(startedAt).Round(time.Millisecond)))

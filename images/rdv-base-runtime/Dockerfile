@@ -5,7 +5,7 @@
 # Build:
 #   docker buildx build --platform linux/amd64,linux/arm64 -t rdv-base:runtime .
 
-FROM alpine:3.19
+FROM alpine:3.21
 
 LABEL org.opencontainers.image.title="rdv-base:runtime"
 LABEL org.opencontainers.image.description="rdv base image for interpreted tools (Node, Python, shell)"
