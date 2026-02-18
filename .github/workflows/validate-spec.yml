@@ -1,0 +1,29 @@
+name: Validate Spec
+
+on:
+  push:
+    paths:
+      - 'spec/**'
+  pull_request:
+    paths:
+      - 'spec/**'
+
+jobs:
+  validate:
+    name: Validate manifests against schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ajv-cli
+        run: npm install -g ajv-cli ajv-formats
+
+      - name: Validate all manifests in spec/examples/
+        run: |
+          for f in spec/examples/*.json; do
+            echo "Validating $f..."
+            ajv validate \
+              -s spec/tool-manifest.schema.json \
+              -d "$f" \
+              --spec=draft2020
+          done

@@ -1,0 +1,26 @@
+name: Lint Container Images
+
+on:
+  push:
+    paths:
+      - 'images/**'
+  pull_request:
+    paths:
+      - 'images/**'
+
+jobs:
+  hadolint:
+    name: Hadolint Dockerfiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint rdv-base-minimal Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: images/rdv-base-minimal/Dockerfile
+
+      - name: Lint rdv-base-runtime Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: images/rdv-base-runtime/Dockerfile
