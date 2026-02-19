@@ -5,8 +5,6 @@ on:
     paths:
       - 'spec/**'
   pull_request:
-    paths:
-      - 'spec/**'
 
 jobs:
   validate:
