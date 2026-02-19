@@ -6,7 +6,7 @@
 #   docker buildx build --platform linux/amd64,linux/arm64 -t rdv-base:minimal .
 
 # Stage 1: build the entrypoint wrapper
-FROM golang:1.22-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /build
 COPY entrypoint.go .

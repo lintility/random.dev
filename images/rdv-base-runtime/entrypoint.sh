@@ -91,46 +91,50 @@ FINISHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # ── Collect output products ───────────────────────────────────────────────────
 products_json() {
-  local output="{"
-  local first=true
-  while IFS= read -r -d '' file; do
-    local rel="${file#"${TOOL_OUTPUT}/"}"
-    [[ "$rel" == ".attestation.json" ]] && continue
-    local hash; hash=$(sha256sum "$file" | awk '{print $1}')
-    $first || output+=","
-    output+="\"${rel}\":{\"sha256\":\"${hash}\",\"path\":\"${file}\"}"
-    first=false
-  done < <(find "${TOOL_OUTPUT}" -type f -print0 2>/dev/null)
-  output+="}"
-  echo "$output"
+  # Use jq for proper JSON encoding — handles filenames with special characters.
+  find "${TOOL_OUTPUT}" -type f -print0 2>/dev/null \
+    | sort -z \
+    | while IFS= read -r -d '' file; do
+        local rel="${file#"${TOOL_OUTPUT}/"}"
+        [[ "$rel" == ".attestation.json" ]] && continue
+        local hash; hash=$(sha256sum "$file" | awk '{print $1}')
+        jq -n --arg k "$rel" --arg h "$hash" --arg p "$file" \
+               '{($k): {sha256: $h, path: $p}}'
+      done \
+    | jq -s 'add // {}'
 }
 
 # ── Write attestation ─────────────────────────────────────────────────────────
 PRODUCTS=$(products_json)
 TRUST_LEVEL="${TOOL_TRUST_LEVEL:-local}"
 
-cat > "${TOOL_OUTPUT}/.attestation.json" <<EOF
-{
-  "spec_version": "${SPEC_VERSION}",
-  "invocation_id": "${INVOCATION_ID}",
-  "tool": {
-    "name": "${TOOL_NAME}",
-    "version": "${TOOL_VERSION}"
-  },
-  "builder": {
-    "id": "rdv-${TRUST_LEVEL}",
-    "trust_level": "${TRUST_LEVEL}"
-  },
-  "materials": {
-    "workspace": "${WORKSPACE_HASH}"
-  },
-  "products": ${PRODUCTS},
-  "exit_code": ${EXIT_CODE},
-  "started_at": "${STARTED_AT}",
-  "finished_at": "${FINISHED_AT}",
-  "signature": null
-}
-EOF
+if ! jq -n \
+  --arg spec_version    "$SPEC_VERSION" \
+  --arg invocation_id   "$INVOCATION_ID" \
+  --arg tool_name       "$TOOL_NAME" \
+  --arg tool_version    "$TOOL_VERSION" \
+  --arg builder_id      "rdv-${TRUST_LEVEL}" \
+  --arg trust_level     "$TRUST_LEVEL" \
+  --arg workspace_hash  "$WORKSPACE_HASH" \
+  --argjson products    "$PRODUCTS" \
+  --argjson exit_code   "$EXIT_CODE" \
+  --arg started_at      "$STARTED_AT" \
+  --arg finished_at     "$FINISHED_AT" \
+  '{
+    spec_version:  $spec_version,
+    invocation_id: $invocation_id,
+    tool:     { name: $tool_name,    version: $tool_version },
+    builder:  { id:   $builder_id,   trust_level: $trust_level },
+    materials: { workspace: $workspace_hash },
+    products:  $products,
+    exit_code: $exit_code,
+    started_at:  $started_at,
+    finished_at: $finished_at,
+    signature:   null
+  }' > "${TOOL_OUTPUT}/.attestation.json"; then
+  log_json "error" "Contract violation: failed to write attestation to ${TOOL_OUTPUT}/.attestation.json"
+  exit 2
+fi
 
 log_json "info" "Attestation written to ${TOOL_OUTPUT}/.attestation.json"
 log_json "info" "Finished with exit code ${EXIT_CODE}"

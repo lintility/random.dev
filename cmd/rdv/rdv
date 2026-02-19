@@ -84,17 +84,34 @@ validate_manifest() {
   fi
 
   local required_fields=("name" "version" "spec_version" "trust_requirements" "parallel_safe")
-  for field in "${required_fields[@]}"; do
-    if ! echo "$manifest" | grep -q "\"$field\""; then
-      err "Manifest missing required field: $field"
+  local name version description
+
+  if command -v jq &>/dev/null; then
+    if ! echo "$manifest" | jq empty >/dev/null 2>&1; then
+      err "Invalid JSON in manifest at $MANIFEST_PATH"
       return 2
     fi
-  done
-
-  local name version description
-  name=$(echo "$manifest" | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"//; s/"//')
-  version=$(echo "$manifest" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"//; s/"//')
-  description=$(echo "$manifest" | grep -o '"description"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"//; s/"//')
+    for field in "${required_fields[@]}"; do
+      if ! echo "$manifest" | jq -e --arg f "$field" 'has($f)' >/dev/null 2>&1; then
+        err "Manifest missing required field: $field"
+        return 2
+      fi
+    done
+    name=$(echo "$manifest" | jq -r '.name // empty')
+    version=$(echo "$manifest" | jq -r '.version // empty')
+    description=$(echo "$manifest" | jq -r '.description // empty')
+  else
+    # Fallback: basic grep/sed for environments without jq
+    for field in "${required_fields[@]}"; do
+      if ! echo "$manifest" | grep -q "\"$field\""; then
+        err "Manifest missing required field: $field"
+        return 2
+      fi
+    done
+    name=$(echo "$manifest" | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"//; s/"//')
+    version=$(echo "$manifest" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"//; s/"//')
+    description=$(echo "$manifest" | grep -o '"description"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"//; s/"//')
+  fi
 
   log "  ${GREEN}✓${RESET} ${BOLD}${name}${RESET} v${version} — ${description}"
   return 0
@@ -126,8 +143,19 @@ cmd_run() {
 
   [[ -z "$image" ]] && { usage_run; die "Image is required."; }
 
-  workspace="$(cd "$workspace" && pwd)"
+  workspace="$(cd "$workspace" && pwd)" || die "Workspace directory not found or inaccessible: $workspace"
   output_dir="${output_dir:-$(mktemp -d /tmp/rdv-output-XXXXXX)}"
+
+  # Guard against obviously unsafe output paths.
+  if [[ "$output_dir" == /* ]]; then
+    local _unsafe
+    for _unsafe in "/" "/etc" "/bin" "/sbin" "/usr" "/var" "/boot" "/dev" "/proc" "/sys" "/root"; do
+      if [[ "$output_dir" == "$_unsafe" || "$output_dir" == "$_unsafe/"* ]]; then
+        die "Refusing to use unsafe output directory: $output_dir"
+      fi
+    done
+  fi
+
   mkdir -p "$output_dir"
 
   local config_mount_args=()
