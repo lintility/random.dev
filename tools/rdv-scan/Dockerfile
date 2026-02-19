@@ -7,7 +7,7 @@ LABEL org.opencontainers.image.source="https://github.com/lintility/random.dev"
 LABEL rdv.spec-version="0.1"
 
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
-# hadolint ignore=DL3018
+# hadolint ignore=DL3018,DL4006
 RUN apk add --no-cache bash curl jq ca-certificates \
     && curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
        | sh -s -- -b /usr/local/bin \

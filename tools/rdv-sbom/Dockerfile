@@ -8,7 +8,7 @@ LABEL rdv.spec-version="0.1"
 
 # Install syft (Anchore SBOM generator) + deps
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
-# hadolint ignore=DL3018
+# hadolint ignore=DL3018,DL4006
 RUN apk add --no-cache bash curl jq ca-certificates \
     && curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
        | sh -s -- -b /usr/local/bin \
