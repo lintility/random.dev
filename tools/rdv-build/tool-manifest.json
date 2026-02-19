@@ -1,0 +1,23 @@
+{
+  "name": "rdv-build",
+  "version": "0.1.0",
+  "description": "Multi-language build tool. Auto-detects Go, Rust, TypeScript, and Python projects.",
+  "spec_version": "0.1",
+  "inputs": {
+    "workspace": true,
+    "config": true,
+    "artifacts": []
+  },
+  "outputs": {
+    "artifacts": ["build-output"],
+    "reports": ["build.log"],
+    "attestation": true
+  },
+  "trust_requirements": "local",
+  "supported_platforms": [
+    {"os": "linux", "arch": "amd64"},
+    {"os": "linux", "arch": "arm64"}
+  ],
+  "parallel_safe": false,
+  "implementation_variant": "polyglot-v1"
+}

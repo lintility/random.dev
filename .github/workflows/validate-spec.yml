@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'spec/**'
+      - 'tools/**'
   pull_request:
 
 jobs:
@@ -19,6 +20,16 @@ jobs:
       - name: Validate all manifests in spec/examples/
         run: |
           for f in spec/examples/*.json; do
+            echo "Validating $f..."
+            ajv validate \
+              -s spec/tool-manifest.schema.json \
+              -d "$f" \
+              --spec=draft2020
+          done
+
+      - name: Validate all tool manifests in tools/
+        run: |
+          for f in tools/*/tool-manifest.json; do
             echo "Validating $f..."
             ajv validate \
               -s spec/tool-manifest.schema.json \

@@ -4,9 +4,11 @@ on:
   push:
     paths:
       - 'images/**'
+      - 'tools/**'
   pull_request:
     paths:
       - 'images/**'
+      - 'tools/**'
 
 jobs:
   hadolint:
@@ -24,3 +26,23 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: images/rdv-base-runtime/Dockerfile
+
+      - name: Lint rdv-build Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: tools/rdv-build/Dockerfile
+
+      - name: Lint rdv-sbom Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: tools/rdv-sbom/Dockerfile
+
+      - name: Lint rdv-scan Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: tools/rdv-scan/Dockerfile
+
+      - name: Lint rdv-test Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: tools/rdv-test/Dockerfile
