@@ -1,0 +1,23 @@
+{
+  "name": "rdv-scan",
+  "version": "0.1.0",
+  "description": "Vulnerability scanner. Scans SBOMs or artifacts using grype. Configurable fail thresholds.",
+  "spec_version": "0.1",
+  "inputs": {
+    "workspace": true,
+    "config": true,
+    "artifacts": ["sbom.json"]
+  },
+  "outputs": {
+    "artifacts": ["vulns.json"],
+    "reports": ["summary.txt"],
+    "attestation": true
+  },
+  "trust_requirements": "local",
+  "supported_platforms": [
+    {"os": "linux", "arch": "amd64"},
+    {"os": "linux", "arch": "arm64"}
+  ],
+  "parallel_safe": true,
+  "implementation_variant": "grype-v1"
+}
