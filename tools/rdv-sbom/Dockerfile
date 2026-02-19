@@ -7,6 +7,7 @@ LABEL org.opencontainers.image.source="https://github.com/lintility/random.dev"
 LABEL rdv.spec-version="0.1"
 
 # Install syft (Anchore SBOM generator) + deps
+SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3018
 RUN apk add --no-cache bash curl jq ca-certificates \
     && curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \

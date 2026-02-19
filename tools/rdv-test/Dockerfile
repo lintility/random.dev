@@ -6,7 +6,7 @@ LABEL org.opencontainers.image.description="Multi-language test runner (Go, Rust
 LABEL org.opencontainers.image.source="https://github.com/lintility/random.dev"
 LABEL rdv.spec-version="0.1"
 
-# hadolint ignore=DL3018
+# hadolint ignore=DL3018,DL3016,DL3013
 RUN apk add --no-cache \
     bash curl jq ca-certificates git \
     go nodejs npm python3 py3-pip cargo rust \
